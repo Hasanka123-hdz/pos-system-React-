@@ -33,6 +33,7 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
   } = useCart();
   const {
     activeTakeAwayOrder,
+    takeAwayOrderNumber, 
     cartDetails,
     updateCartDetails,
     clearActiveOrder,
