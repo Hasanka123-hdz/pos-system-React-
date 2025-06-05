@@ -177,7 +177,7 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
       const newOrder = addTakeAwayOrder();
 
       await axios.post(
-          `${BASE_URL}Cart/add-takeaway-order?tableId=${newOrder.id}&customerId=${selectedCustomer?.id}&orderType=1`,
+          `${BASE_URL}Cart/add-takeaway-order?customerId=${selectedCustomer?.id}&orderType=1`,
         null,
         {
           headers: {
@@ -187,7 +187,6 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
         }
       );
 
-      handleTableClick(newOrder);
       message.success("New takeaway order created successfully!");
       await fetchTakeawayOrders();
     } catch (err) {
@@ -254,7 +253,6 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
         null,
         { headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" } }
       );
-      handleTableClick(newOrder);
       message.success("New delivery order created successfully!");
       await fetchDeliveryOrders();
     } catch (err) {
@@ -359,9 +357,9 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
           <span className="table-id">+</span>
           <div className="table-info">
             <p>Add New Order</p>
-            <p>0.0 orders</p>
+            {/* <p>0.0 orders</p> */}
           </div>
-          <span className="Open process-status">Open</span>
+          {/* <span className="Open process-status">Open</span> */}
         </div>
       </div>
     );
