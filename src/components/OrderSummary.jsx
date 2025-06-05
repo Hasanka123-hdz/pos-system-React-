@@ -1414,7 +1414,6 @@ const CartItemsList = ({ cartData, onUpdateItem }) => {
             <button
               className="delete-btn"
               onClick={() => onUpdateItem(index, "delete")}
-              disabled={item.isKot !== 0}
             >
               <i className="fas fa-trash"></i>
             </button>
