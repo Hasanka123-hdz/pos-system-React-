@@ -776,47 +776,47 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
     if (!cartData?.cartDetails?.[index]) return;
 
     try {
-      const item = cartData.cartDetails[index];
-      const orderDetails = getOrderDetails();
-      if (!orderDetails?.id) {
-        message.error("No active order found");
-        return;
-      }
-
-      // Make the API call with the exact parameter names expected by the API
-      const response = await axios.delete(
-        `${BASE_URL}Cart/delete-cart-item`,
-        {
-          params: {
-            tableId: orderDetails.id,
-            productId: item.productId,
-            organizationId: selectedOrganizationId,
-          },
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
+        const item = cartData.cartDetails[index];
+        const orderDetails = getOrderDetails();
+        if (!orderDetails?.id) {
+            message.error("No active order found");
+            return;
         }
-      );
 
-      // Only update UI if API call is successful
-      if (response.status === 200 || response.status === 204) {
-        // Update local state
-        setCartData((prev) => {
-          const newCartDetails = [...prev.cartDetails];
-          newCartDetails.splice(index, 1);
-          return { ...prev, cartDetails: newCartDetails };
-        });
+        // Make the API call with the exact parameter names expected by the API
+        const response = await axios.delete(
+            `${BASE_URL}Cart/delete-cart-item`,
+            {
+                params: {
+                    tableId: orderDetails.id,
+                    productId: item.productId,
+                    organizationId: selectedOrganizationId,
+                },
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "Content-Type": "application/json",
+                },
+            }
+        );
 
-        // Refresh cart details from server
-        await fetchCartDetails(true);
-        message.success("Item removed successfully");
-      }
+        // Only update UI if API call is successful
+        if (response.status === 200 || response.status === 204) {
+            // Update local state
+            setCartData((prev) => {
+                const newCartDetails = [...prev.cartDetails];
+                newCartDetails.splice(index, 1);
+                return { ...prev, cartDetails: newCartDetails };
+            });
+
+            // Refresh cart details from server
+            await fetchCartDetails(true);
+            message.success("Item removed successfully");
+        }
     } catch (error) {
-      console.error("Failed to delete item:", error);
-      message.error("Failed to remove item. Please try again.");
-      // Refresh cart to ensure UI is in sync
-      await fetchCartDetails(true);
+        console.error("Failed to delete item:", error);
+        message.error("Failed to remove item. Please try again.");
+        // Refresh cart to ensure UI is in sync
+        await fetchCartDetails(true);
     }
   };
 
