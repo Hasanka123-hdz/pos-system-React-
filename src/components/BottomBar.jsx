@@ -174,6 +174,12 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
 
   const handleAddTakeAwayOrder = async () => {
     try {
+      // Check if a customer is selected
+      if (!selectedCustomer || !selectedCustomer.id) {
+        message.warning("Please select a customer first!");
+        return;
+      }
+      
       const newOrder = addTakeAwayOrder();
 
       await axios.post(
@@ -247,6 +253,12 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
 
   const handleAddDeliveryOrder = async () => {
     try {
+      // Check if a customer is selected
+      if (!selectedCustomer || !selectedCustomer.id) {
+        message.warning("Please select a customer first!");
+        return;
+      }
+      
       const newOrder = addDeliveryOrder(); // Still use context to generate order
       await axios.post(
         `${BASE_URL}Cart/add-delivery-order?tableId=${newOrder.id}&customerId=${selectedCustomer?.id}&orderType=2`,
