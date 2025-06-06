@@ -16,7 +16,7 @@ const SERVICE_TYPE_MAP = {
   "Delivery": 2,
 };
 
-const BottomBar = ({ onTableSelect, onRefetchTables }) => {
+const BottomBar = ({ onTableSelect, onRefetchTables, onOtherServicesClick }) => {
   // Common state and context
   const { accessToken } = useContext(AuthContext);
   const { setSelectedTableId } = useContext(TableContext);
@@ -40,6 +40,30 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
   // Delivery specific state
   const [deliveryOrders, setDeliveryOrders] = useState([]); 
   const [deliveryLoading, setDeliveryLoading] = useState(false);
+
+  // Add a fetch cart details function
+  const fetchCartDetails = useCallback(async (guid) => {
+    if (!guid || !accessToken) return;
+
+    try {
+      const config = {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      };
+
+      const response = await axios.get(
+        `${BASE_URL}Cart/get-cart-details?Guid=${guid}&OrganizationsId=${organizationId}`,
+        config
+      );
+
+      return response.data?.noOfItems || 0;
+    } catch (err) {
+      console.error("Error fetching cart details:", err);
+      return 0;
+    }
+  }, [accessToken, BASE_URL, organizationId]);
 
   // Dine-in specific functions
   const fetchTables = useCallback(async () => {
@@ -97,30 +121,6 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
     );
   }, []);
 
-  // Add new function to fetch cart details
-  const fetchCartDetails = useCallback(async (guid) => {
-    if (!guid || !accessToken) return;
-
-    try {
-      const config = {
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
-      };
-
-      const response = await axios.get(
-        `${BASE_URL}Cart/get-cart-details?Guid=${guid}&OrganizationsId=${organizationId}`,
-        config
-      );
-
-      return response.data?.noOfItems || 0;
-    } catch (err) {
-      console.error("Error fetching cart details:", err);
-      return 0;
-    }
-  }, [accessToken, BASE_URL, organizationId]);
-
   // Take-away specific functions
   const fetchTakeawayOrders = useCallback(async () => {
     try {
@@ -172,39 +172,6 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
     }
   }, [accessToken, BASE_URL, organizationId, fetchCartDetails]);
 
-  const handleAddTakeAwayOrder = async () => {
-    try {
-      // Check if a customer is selected
-      if (!selectedCustomer || !selectedCustomer.id) {
-        message.warning("Please select a customer first!");
-        return;
-      }
-      
-      const newOrder = addTakeAwayOrder();
-
-      await axios.post(
-          `${BASE_URL}Cart/add-takeaway-order?customerId=${selectedCustomer?.id}&orderType=1`,
-        null,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
-        }
-      );
-
-      message.success("New takeaway order created successfully!");
-      await fetchTakeawayOrders();
-    } catch (err) {
-      console.error("Error initializing takeaway cart:", err);
-      const errorMessage =
-        err.response?.data?.message ||
-        err.message ||
-        "Failed to create new takeaway order";
-      message.error(`Error: ${errorMessage}`);
-    }
-  };
-
   // Delivery specific functions
   const fetchDeliveryOrders = useCallback(async () => {
     try {
@@ -251,6 +218,41 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
     }
   }, [accessToken, BASE_URL, organizationId, fetchCartDetails]);
 
+  // This function will be defined after all the fetch functions
+
+  const handleAddTakeAwayOrder = async () => {
+    try {
+      // Check if a customer is selected
+      if (!selectedCustomer || !selectedCustomer.id) {
+        message.warning("Please select a customer first!");
+        return;
+      }
+      
+      const newOrder = addTakeAwayOrder();
+
+      await axios.post(
+          `${BASE_URL}Cart/add-takeaway-order?customerId=${selectedCustomer?.id}&orderType=1`,
+        null,
+        {
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      message.success("New takeaway order created successfully!");
+      await fetchTakeawayOrders();
+    } catch (err) {
+      console.error("Error initializing takeaway cart:", err);
+      const errorMessage =
+        err.response?.data?.message ||
+        err.message ||
+        "Failed to create new takeaway order";
+      message.error(`Error: ${errorMessage}`);
+    }
+  };
+
   const handleAddDeliveryOrder = async () => {
     try {
       // Check if a customer is selected
@@ -272,6 +274,17 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
       message.error(err.response?.data?.message || "Failed to create new delivery order");
     }
   };
+
+  // Add a refresh function that can be called directly - defined after all fetch functions
+  const refreshAllData = useCallback(() => {
+    if (selectedServiceType === "Dine in") {
+      fetchTables();
+    } else if (selectedServiceType === "Take Away") {
+      fetchTakeawayOrders();
+    } else if (selectedServiceType === "Delivery") {
+      fetchDeliveryOrders();
+    }
+  }, [selectedServiceType, fetchTables, fetchTakeawayOrders, fetchDeliveryOrders]);
 
   // Common functions
   const handleTableClick = (table) => {
@@ -433,17 +446,23 @@ const BottomBar = ({ onTableSelect, onRefetchTables }) => {
 
   useEffect(() => {
     if (onRefetchTables) {
-      onRefetchTables(fetchTables);
+      onRefetchTables(refreshAllData); // Pass the refreshAllData function instead
     }
-  }, [onRefetchTables, fetchTables]);
+  }, [onRefetchTables, refreshAllData]);
 
   useEffect(() => {
+    // Refresh data when service type changes
     if (selectedServiceType === "Take Away") {
       fetchTakeawayOrders();
     } else if (selectedServiceType === "Delivery") {
       fetchDeliveryOrders();
     }
-  }, [selectedServiceType, fetchTakeawayOrders, fetchDeliveryOrders, cartData]);
+  }, [selectedServiceType, fetchTakeawayOrders, fetchDeliveryOrders]);
+
+  // Force refresh when component key changes
+  useEffect(() => {
+    refreshAllData();
+  }, [refreshAllData]);
 
   // Main render
   const renderBottomBar = () => {

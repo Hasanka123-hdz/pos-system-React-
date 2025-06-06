@@ -19,7 +19,7 @@ import "../assets/css/components/OrderSummary.css";
 
 const { Title, Text } = Typography;
 
-const OrderSummary = ({ selectedTable, onClearTable }) => {
+const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
   const { selectedOrganizationId } = useContext(OrganizationContext);
   const { selectedTableId, setSelectedTableId } = useContext(TableContext);
   const { accessToken } = useContext(AuthContext);
@@ -456,13 +456,18 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
       // Refresh cart details from server
       await fetchCartDetails(true);
       
+      // Notify parent component about the update to refresh BottomBar
+      if (onItemDeleted && typeof onItemDeleted === 'function') {
+        onItemDeleted(orderDetails.id);
+      }
+      
     } catch (error) {
       console.error("Failed to increase quantity:", error);
       message.error("Failed to update quantity. Please try again.");
     }
   };
 
-  const handleQuantityDecrease = (index) => {
+  const handleQuantityDecrease = async (index) => {
     if (
       !cartData?.cartDetails?.[index] ||
       cartData.cartDetails[index].isKot !== 0 ||
@@ -470,11 +475,52 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
     )
       return;
 
-    setCartData((prev) => {
-      const newCartDetails = [...prev.cartDetails];
-      newCartDetails[index].qty -= 1;
-      return { ...prev, cartDetails: newCartDetails };
-    });
+    try {
+      const item = cartData.cartDetails[index];
+      const orderDetails = getOrderDetails();
+      if (!orderDetails?.id) {
+        message.error("No active order found");
+        return;
+      }
+
+      // Make API call to decrease quantity
+      await axios.post(
+        `${BASE_URL}Cart/decrease-qty`,
+        null,
+        {
+          params: {
+            tableId: orderDetails.id,
+            productId: item.productId,
+            organizationId: selectedOrganizationId,
+          },
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+
+      // Update local state optimistically for better UX
+      setCartData((prev) => {
+        const newCartDetails = [...prev.cartDetails];
+        newCartDetails[index].qty -= 1;
+        return { ...prev, cartDetails: newCartDetails };
+      });
+
+      // Refresh cart details from server
+      await fetchCartDetails(true);
+      
+      // Notify parent component about the update to refresh BottomBar
+      if (onItemDeleted && typeof onItemDeleted === 'function') {
+        onItemDeleted(orderDetails.id);
+      }
+      
+    } catch (error) {
+      console.error("Failed to decrease quantity:", error);
+      message.error("Failed to update quantity. Please try again.");
+      // Refresh cart to ensure UI is in sync
+      await fetchCartDetails(true);
+    }
   };
 
   const handleAddNoteToDatabase = async (index) => {
@@ -811,6 +857,25 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
             // Refresh cart details from server
             await fetchCartDetails(true);
             message.success("Item removed successfully");
+
+            // Notify parent component that an item was deleted to refresh BottomBar
+            if (onItemDeleted && typeof onItemDeleted === 'function') {
+                onItemDeleted(orderDetails.id);
+            }
+
+            // Check if cart is now empty and handle take away order accordingly
+            if (selectedServiceType === "Take Away" && 
+                (!cartData?.cartDetails || cartData.cartDetails.length <= 1)) {
+                // Clear the active take away order
+                clearActiveOrder();
+                // Reset cart state
+                resetCartState();
+                // Reset payment and discount states
+                setSelectedPayment(null);
+                setDiscount("0");
+                setAmountEntered("0.00");
+                setSelectedCardType(null);
+            }
         }
     } catch (error) {
         console.error("Failed to delete item:", error);
