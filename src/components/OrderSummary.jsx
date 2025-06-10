@@ -426,6 +426,9 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
         return;
       }
   
+      // Show loading message
+      message.loading({ content: "Updating quantity...", key: "updateQty"});
+  
       // Determine which type of order we're dealing with
       const params = {
         Guid: orderDetails.id,
@@ -458,8 +461,11 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
         return { ...prev, cartDetails: newCartDetails };
       });
   
-      // Refresh cart details from server
-      await fetchCartDetails(true, false);
+      // Force refresh cart details from server, bypassing cache
+      await fetchCartDetails(true, true);
+      
+      // Show success message
+      message.success({ content: "Quantity updated!", key: "updateQty"});
       
       // Notify parent component about the update to refresh BottomBar
       if (onItemDeleted && typeof onItemDeleted === 'function') {
@@ -468,7 +474,7 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
       
     } catch (error) {
       console.error("Failed to increase quantity:", error);
-      message.error("Failed to update quantity. Please try again.");
+      message.error({ content: "Failed to update quantity. Please try again.", key: "updateQty" });
     }
   };
 
@@ -487,6 +493,9 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
         message.error("No active order found");
         return;
       }
+
+      // Show loading message
+      message.loading({ content: "Updating quantity...", key: "updateQty", duration: 0 });
 
       // Make API call to decrease quantity
       await axios.post(
@@ -512,8 +521,11 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
         return { ...prev, cartDetails: newCartDetails };
       });
 
-      // Refresh cart details from server
-      await fetchCartDetails(true, false);
+      // Force refresh cart details from server, bypassing cache
+      await fetchCartDetails(true, true);
+      
+      // Show success message
+      message.success({ content: "Quantity updated!", key: "updateQty", duration: 1 });
       
       // Notify parent component about the update to refresh BottomBar
       if (onItemDeleted && typeof onItemDeleted === 'function') {
@@ -522,9 +534,9 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
       
     } catch (error) {
       console.error("Failed to decrease quantity:", error);
-      message.error("Failed to update quantity. Please try again.");
-      // Refresh cart to ensure UI is in sync
-      await fetchCartDetails(true, false);
+      message.error({ content: "Failed to update quantity. Please try again.", key: "updateQty", duration: 2 });
+      // Refresh cart to ensure UI is in sync with server
+      await fetchCartDetails(true, true);
     }
   };
 
