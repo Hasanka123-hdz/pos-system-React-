@@ -37,6 +37,8 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
     cartDetails,
     updateCartDetails,
     clearActiveOrder,
+    handleTakeAwayOrderSelect,
+    addTakeAwayOrder,
     switchServiceType: switchTakeAwayServiceType,
   } = useTakeAway();
   // Added DeliveryContext variables
@@ -101,7 +103,7 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
   }, [setCartData, setCartError, setCartLoading]);
 
   const fetchCartDetails = useCallback(
-    async (skipLoading = false) => {
+    async (skipLoading = false, forceRefresh = false) => {
       if (!selectedServiceType) return;
 
       console.log("=== Fetching Cart Details ===");
@@ -109,6 +111,7 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
       console.log("Table ID:", selectedTable?.id);
       console.log("Take Away Order ID:", activeTakeAwayOrder?.id);
       console.log("Delivery Order ID:", activeDeliveryOrder?.id);
+      console.log("Force Refresh:", forceRefresh);
 
       if (!selectedOrganizationId || !accessToken) {
         console.log("Credentials missing, aborting fetch");
@@ -148,7 +151,8 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
               setCartLoading(false);
               return;
             }
-            if (cartDetails) {
+            // Only use cached details if not forcing refresh
+            if (cartDetails && !forceRefresh) {
               console.log("Using cached Take Away cart details");
               setCartData({
                 ...cartDetails,
@@ -172,7 +176,8 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
               setCartLoading(false);
               return;
             }
-            if (deliveryCartDetails) {
+            // Only use cached details if not forcing refresh
+            if (deliveryCartDetails && !forceRefresh) {
               console.log("Using cached Delivery cart details");
               setCartData({
                 ...deliveryCartDetails,
@@ -321,7 +326,7 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
       }
 
       Promise.resolve().then(() => {
-        fetchCartDetails(true);
+        fetchCartDetails(true, false);
         setIsTransitioning(false);
       });
     },
@@ -369,7 +374,7 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
       return;
     }
 
-    fetchCartDetails();
+    fetchCartDetails(false, false);
   }, [
     selectedServiceType,
     selectedTable,
@@ -454,7 +459,7 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
       });
   
       // Refresh cart details from server
-      await fetchCartDetails(true);
+      await fetchCartDetails(true, false);
       
       // Notify parent component about the update to refresh BottomBar
       if (onItemDeleted && typeof onItemDeleted === 'function') {
@@ -508,7 +513,7 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
       });
 
       // Refresh cart details from server
-      await fetchCartDetails(true);
+      await fetchCartDetails(true, false);
       
       // Notify parent component about the update to refresh BottomBar
       if (onItemDeleted && typeof onItemDeleted === 'function') {
@@ -519,7 +524,7 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
       console.error("Failed to decrease quantity:", error);
       message.error("Failed to update quantity. Please try again.");
       // Refresh cart to ensure UI is in sync
-      await fetchCartDetails(true);
+      await fetchCartDetails(true, false);
     }
   };
 
@@ -542,7 +547,7 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
           },
         }
       );
-      await fetchCartDetails();
+      await fetchCartDetails(false, false);
     } catch (err) {
       setCartError("Failed to add note.");
       console.error(err);
@@ -599,6 +604,10 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
     }
 
     try {
+      // Show loading message
+      message.loading({ content: "Placing order...", key: "placeOrder", duration: 0 });
+      
+      // Call the place-order API
       await axios.post(
         `${BASE_URL}Cart/place-order?TableId=${orderDetails.id}&OrganizationId=${selectedOrganizationId}`,
         {},
@@ -609,10 +618,14 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
           },
         }
       );
-      await fetchCartDetails();
-      message.success("Order placed successfully!");
+      
+      // Force a refresh of cart details from server, bypassing cache
+      await fetchCartDetails(true, true);
+      
+      // Show success message
+      message.success({ content: "Order placed successfully!", key: "placeOrder", duration: 2 });
     } catch (err) {
-      message.error("Failed to place order");
+      message.error({ content: "Failed to place order", key: "placeOrder", duration: 2 });
       console.error(err);
     }
   };
@@ -824,6 +837,7 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
     try {
         const item = cartData.cartDetails[index];
         const orderDetails = getOrderDetails();
+        console.log("orderDetails", orderDetails);
         if (!orderDetails?.id) {
             message.error("No active order found");
             return;
@@ -847,15 +861,25 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
 
         // Only update UI if API call is successful
         if (response.status === 200 || response.status === 204) {
-            // Update local state
+            // First update local state to show immediate feedback
             setCartData((prev) => {
+                if (!prev || !prev.cartDetails) return prev;
+                
                 const newCartDetails = [...prev.cartDetails];
                 newCartDetails.splice(index, 1);
-                return { ...prev, cartDetails: newCartDetails };
+                
+                // Recalculate subtotal with updated cart
+                const updatedSubTotal = newCartDetails.reduce((sum, item) => {
+                    return sum + (item.price * item.qty);
+                }, 0).toFixed(2);
+                
+                return { 
+                    ...prev, 
+                    cartDetails: newCartDetails,
+                    subTotal: updatedSubTotal
+                };
             });
-
-            // Refresh cart details from server
-            await fetchCartDetails(true);
+            
             message.success("Item removed successfully");
 
             // Notify parent component that an item was deleted to refresh BottomBar
@@ -865,7 +889,7 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
 
             // Check if cart is now empty and handle take away order accordingly
             if (selectedServiceType === "Take Away" && 
-                (!cartData?.cartDetails || cartData.cartDetails.length <= 1)) {
+                (cartData?.cartDetails?.length <= 1)) {
                 // Clear the active take away order
                 clearActiveOrder();
                 // Reset cart state
@@ -876,12 +900,23 @@ const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
                 setAmountEntered("0.00");
                 setSelectedCardType(null);
             }
+            
+            // Same check for Delivery service type
+            if (selectedServiceType === "Delivery" && 
+                (cartData?.cartDetails?.length <= 1)) {
+                clearActiveDeliveryOrder();
+                resetCartState();
+                setSelectedPayment(null);
+                setDiscount("0");
+                setAmountEntered("0.00");
+                setSelectedCardType(null);
+            }
         }
     } catch (error) {
         console.error("Failed to delete item:", error);
         message.error("Failed to remove item. Please try again.");
-        // Refresh cart to ensure UI is in sync
-        await fetchCartDetails(true);
+        // Refresh cart to ensure UI is in sync with server
+        await fetchCartDetails(true, false);
     }
   };
 

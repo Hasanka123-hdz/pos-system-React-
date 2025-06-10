@@ -164,9 +164,7 @@ const BottomBar = ({ onTableSelect, onRefetchTables, onOtherServicesClick }) => 
       setTakeawayOrders(transformedOrders);
     } catch (err) {
       console.error("Error fetching takeaway orders:", err);
-      message.error(
-        err.response?.data?.message || "Failed to load takeaway orders"
-      );
+      setTakeawayOrders([]);
     } finally {
       setTakeawayLoading(false);
     }
@@ -212,7 +210,8 @@ const BottomBar = ({ onTableSelect, onRefetchTables, onOtherServicesClick }) => 
       setDeliveryOrders(transformedOrders);
     } catch (err) {
       console.error("Error fetching delivery orders:", err);
-      message.error(err.response?.data?.message || "Failed to load delivery orders");
+      // Silently handle the error without showing message to user
+      setDeliveryOrders([]);
     } finally {
       setDeliveryLoading(false);
     }
