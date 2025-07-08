@@ -4,7 +4,7 @@ export const TakeAwayContext = createContext();
 
 export const TakeAwayProvider = ({ children }) => {
   const [orderCounter, setOrderCounter] = useState(0);
-  const [takeAwayOrderNumber, setTakeAwayOrderNumber] = useState(`TA-${orderCounter}`);
+  const [takeAwayOrderNumber, setTakeAwayOrderNumber] = useState(`Take Away${orderCounter}`);
   const [takeAwayOrders, setTakeAwayOrders] = useState([]);
   const [activeTakeAwayOrder, setActiveTakeAwayOrder] = useState(null);
   const [cartDetails, setCartDetails] = useState(null);
@@ -13,7 +13,7 @@ export const TakeAwayProvider = ({ children }) => {
   const generateNextOrderNumber = () => {
     const nextCounter = orderCounter + 1;
     setOrderCounter(nextCounter);
-    const newOrderNumber = `TA-${nextCounter}`;
+    const newOrderNumber = `Take Away ${nextCounter}`;
     setTakeAwayOrderNumber(newOrderNumber);
     return newOrderNumber;
   };

@@ -19,7 +19,7 @@ import "../assets/css/components/OrderSummary.css";
 
 const { Title, Text } = Typography;
 
-const OrderSummary = ({ selectedTable, onClearTable }) => {
+const OrderSummary = ({ selectedTable, onClearTable, onItemDeleted }) => {
   const { selectedOrganizationId } = useContext(OrganizationContext);
   const { selectedTableId, setSelectedTableId } = useContext(TableContext);
   const { accessToken } = useContext(AuthContext);
@@ -33,9 +33,12 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
   } = useCart();
   const {
     activeTakeAwayOrder,
+    takeAwayOrderNumber, 
     cartDetails,
     updateCartDetails,
     clearActiveOrder,
+    handleTakeAwayOrderSelect,
+    addTakeAwayOrder,
     switchServiceType: switchTakeAwayServiceType,
   } = useTakeAway();
   // Added DeliveryContext variables
@@ -100,7 +103,7 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
   }, [setCartData, setCartError, setCartLoading]);
 
   const fetchCartDetails = useCallback(
-    async (skipLoading = false) => {
+    async (skipLoading = false, forceRefresh = false) => {
       if (!selectedServiceType) return;
 
       console.log("=== Fetching Cart Details ===");
@@ -108,6 +111,7 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
       console.log("Table ID:", selectedTable?.id);
       console.log("Take Away Order ID:", activeTakeAwayOrder?.id);
       console.log("Delivery Order ID:", activeDeliveryOrder?.id);
+      console.log("Force Refresh:", forceRefresh);
 
       if (!selectedOrganizationId || !accessToken) {
         console.log("Credentials missing, aborting fetch");
@@ -147,7 +151,8 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
               setCartLoading(false);
               return;
             }
-            if (cartDetails) {
+            // Only use cached details if not forcing refresh
+            if (cartDetails && !forceRefresh) {
               console.log("Using cached Take Away cart details");
               setCartData({
                 ...cartDetails,
@@ -171,7 +176,8 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
               setCartLoading(false);
               return;
             }
-            if (deliveryCartDetails) {
+            // Only use cached details if not forcing refresh
+            if (deliveryCartDetails && !forceRefresh) {
               console.log("Using cached Delivery cart details");
               setCartData({
                 ...deliveryCartDetails,
@@ -320,7 +326,7 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
       }
 
       Promise.resolve().then(() => {
-        fetchCartDetails(true);
+        fetchCartDetails(true, false);
         setIsTransitioning(false);
       });
     },
@@ -368,7 +374,7 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
       return;
     }
 
-    fetchCartDetails();
+    fetchCartDetails(false, false);
   }, [
     selectedServiceType,
     selectedTable,
@@ -420,6 +426,9 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
         return;
       }
   
+      // Show loading message
+      message.loading({ content: "Updating quantity...", key: "updateQty"});
+  
       // Determine which type of order we're dealing with
       const params = {
         Guid: orderDetails.id,
@@ -452,28 +461,93 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
         return { ...prev, cartDetails: newCartDetails };
       });
   
-      // Refresh cart details from server
-      await fetchCartDetails(true);
+      // Force refresh cart details from server, bypassing cache
+      await fetchCartDetails(true, true);
+      
+      // Show success message
+      message.success({ content: "Quantity updated!", key: "updateQty"});
+      
+      // Notify parent component about the update to refresh BottomBar
+      if (onItemDeleted && typeof onItemDeleted === 'function') {
+        onItemDeleted(orderDetails.id);
+      }
       
     } catch (error) {
       console.error("Failed to increase quantity:", error);
-      message.error("Failed to update quantity. Please try again.");
+      message.error({ content: "Failed to update quantity. Please try again.", key: "updateQty" });
     }
   };
 
-  const handleQuantityDecrease = (index) => {
+  const handleQuantityDecrease = async (index) => {
     if (
       !cartData?.cartDetails?.[index] ||
       cartData.cartDetails[index].isKot !== 0 ||
       cartData.cartDetails[index].qty <= 1
     )
       return;
-
-    setCartData((prev) => {
-      const newCartDetails = [...prev.cartDetails];
-      newCartDetails[index].qty -= 1;
-      return { ...prev, cartDetails: newCartDetails };
-    });
+  
+    try {
+      const item = cartData.cartDetails[index];
+      const orderDetails = getOrderDetails();
+      if (!orderDetails?.id) {
+        message.error("No active order found");
+        return;
+      }
+  
+      // Show loading message
+      message.loading({ content: "Updating quantity...", key: "updateQty" });
+  
+      // Simply add -1 quantity using the same endpoint as quantity increase
+      const params = {
+        Guid: orderDetails.id,
+        ProductId: item.productId,
+        Qty: -1, // IMPORTANT: Using negative quantity to decrease
+        cusId: selectedCustomer?.id,
+        name: item.name,
+        value: item.price,
+        ordertype: ["Dine in", "Take Away", "Delivery"].indexOf(orderDetails.type),
+        OrganizationsId: selectedOrganizationId,
+      };
+      
+      console.log("Decreasing quantity with params:", params);
+      
+      // Use the same add-to-cart endpoint as handleQuantityIncrease
+      await axios.post(
+        `${BASE_URL}Cart/add-to-cart`,
+        null,
+        {
+          params,
+          headers: {
+            Authorization: `Bearer ${accessToken}`,
+            "Content-Type": "application/json",
+          },
+        }
+      );
+  
+      // Update local state optimistically for better UX
+      setCartData((prev) => {
+        const newCartDetails = [...prev.cartDetails];
+        newCartDetails[index].qty -= 1;
+        return { ...prev, cartDetails: newCartDetails };
+      });
+  
+      // Force refresh cart details from server, bypassing cache
+      await fetchCartDetails(true, true);
+      
+      // Show success message
+      message.success({ content: "Quantity updated!", key: "updateQty" });
+      
+      // Notify parent component about the update to refresh BottomBar
+      if (onItemDeleted && typeof onItemDeleted === 'function') {
+        onItemDeleted(orderDetails.id);
+      }
+      
+    } catch (error) {
+      console.error("Failed to decrease quantity:", error);
+      message.error({ content: "Failed to update quantity. Please try again.", key: "updateQty" });
+      // Refresh cart to ensure UI is in sync with server
+      await fetchCartDetails(true, true);
+    }
   };
 
   const handleAddNoteToDatabase = async (index) => {
@@ -495,7 +569,7 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
           },
         }
       );
-      await fetchCartDetails();
+      await fetchCartDetails(false, false);
     } catch (err) {
       setCartError("Failed to add note.");
       console.error(err);
@@ -552,6 +626,10 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
     }
 
     try {
+      // Show loading message
+      message.loading({ content: "Placing order...", key: "placeOrder", duration: 0 });
+      
+      // Call the place-order API
       await axios.post(
         `${BASE_URL}Cart/place-order?TableId=${orderDetails.id}&OrganizationId=${selectedOrganizationId}`,
         {},
@@ -562,10 +640,14 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
           },
         }
       );
-      await fetchCartDetails();
-      message.success("Order placed successfully!");
+      
+      // Force a refresh of cart details from server, bypassing cache
+      await fetchCartDetails(true, true);
+      
+      // Show success message
+      message.success({ content: "Order placed successfully!", key: "placeOrder", duration: 2 });
     } catch (err) {
-      message.error("Failed to place order");
+      message.error({ content: "Failed to place order", key: "placeOrder", duration: 2 });
       console.error(err);
     }
   };
@@ -775,47 +857,88 @@ const OrderSummary = ({ selectedTable, onClearTable }) => {
     if (!cartData?.cartDetails?.[index]) return;
 
     try {
-      const item = cartData.cartDetails[index];
-      const orderDetails = getOrderDetails();
-      if (!orderDetails?.id) {
-        message.error("No active order found");
-        return;
-      }
-
-      // Make the API call with the exact parameter names expected by the API
-      const response = await axios.delete(
-        `${BASE_URL}Cart/delete-cart-item`,
-        {
-          params: {
-            tableId: orderDetails.id,
-            productId: item.productId,
-            organizationId: selectedOrganizationId,
-          },
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            "Content-Type": "application/json",
-          },
+        const item = cartData.cartDetails[index];
+        const orderDetails = getOrderDetails();
+        console.log("orderDetails", orderDetails);
+        if (!orderDetails?.id) {
+            message.error("No active order found");
+            return;
         }
-      );
 
-      // Only update UI if API call is successful
-      if (response.status === 200 || response.status === 204) {
-        // Update local state
-        setCartData((prev) => {
-          const newCartDetails = [...prev.cartDetails];
-          newCartDetails.splice(index, 1);
-          return { ...prev, cartDetails: newCartDetails };
-        });
+        // Make the API call with the exact parameter names expected by the API
+        const response = await axios.delete(
+            `${BASE_URL}Cart/delete-cart-item`,
+            {
+                params: {
+                    tableId: orderDetails.id,
+                    productId: item.productId,
+                    organizationId: selectedOrganizationId,
+                },
+                headers: {
+                    Authorization: `Bearer ${accessToken}`,
+                    "Content-Type": "application/json",
+                },
+            }
+        );
 
-        // Refresh cart details from server
-        await fetchCartDetails(true);
-        message.success("Item removed successfully");
-      }
+        // Only update UI if API call is successful
+        if (response.status === 200 || response.status === 204) {
+            // First update local state to show immediate feedback
+            setCartData((prev) => {
+                if (!prev || !prev.cartDetails) return prev;
+                
+                const newCartDetails = [...prev.cartDetails];
+                newCartDetails.splice(index, 1);
+                
+                // Recalculate subtotal with updated cart
+                const updatedSubTotal = newCartDetails.reduce((sum, item) => {
+                    return sum + (item.price * item.qty);
+                }, 0).toFixed(2);
+                
+                return { 
+                    ...prev, 
+                    cartDetails: newCartDetails,
+                    subTotal: updatedSubTotal
+                };
+            });
+            
+            message.success("Item removed successfully");
+
+            // Notify parent component that an item was deleted to refresh BottomBar
+            if (onItemDeleted && typeof onItemDeleted === 'function') {
+                onItemDeleted(orderDetails.id);
+            }
+
+            // Check if cart is now empty and handle take away order accordingly
+            if (selectedServiceType === "Take Away" && 
+                (cartData?.cartDetails?.length <= 1)) {
+                // Clear the active take away order
+                clearActiveOrder();
+                // Reset cart state
+                resetCartState();
+                // Reset payment and discount states
+                setSelectedPayment(null);
+                setDiscount("0");
+                setAmountEntered("0.00");
+                setSelectedCardType(null);
+            }
+            
+            // Same check for Delivery service type
+            if (selectedServiceType === "Delivery" && 
+                (cartData?.cartDetails?.length <= 1)) {
+                clearActiveDeliveryOrder();
+                resetCartState();
+                setSelectedPayment(null);
+                setDiscount("0");
+                setAmountEntered("0.00");
+                setSelectedCardType(null);
+            }
+        }
     } catch (error) {
-      console.error("Failed to delete item:", error);
-      message.error("Failed to remove item. Please try again.");
-      // Refresh cart to ensure UI is in sync
-      await fetchCartDetails(true);
+        console.error("Failed to delete item:", error);
+        message.error("Failed to remove item. Please try again.");
+        // Refresh cart to ensure UI is in sync with server
+        await fetchCartDetails(true, false);
     }
   };
 
@@ -1414,7 +1537,6 @@ const CartItemsList = ({ cartData, onUpdateItem }) => {
             <button
               className="delete-btn"
               onClick={() => onUpdateItem(index, "delete")}
-              disabled={item.isKot !== 0}
             >
               <i className="fas fa-trash"></i>
             </button>
